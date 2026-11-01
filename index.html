@@ -61,16 +61,19 @@ async function load(){
  try{const st=await api("state",{});S=st}catch(e){}
  if(view==3){try{board=(await api("board",{})).rows}catch(e){}}
  draw()}
-function pick(id,k,o,name){const i=slip.findIndex(s=>s.id==id);
+function lab(m,k,pt){return m=="ou"?(k?"Under ":"Over ")+pt:LB[k]}
+function pick(id,m,k,o,pt,name){const i=slip.findIndex(s=>s.id==id&&s.m==m);
  if(i>=0){const same=slip[i].k==k;slip.splice(i,1);if(same){draw();return}}
- slip.push({id,sport,k,odds:o,name});draw()}
+ slip.push({id,sport,m,k,odds:o,pt,name});draw()}
 function rm(i){slip.splice(i,1);draw()}
-function btns(e){return `<div class="o">${e.odds.map((o,k)=>o?`<button class="${slip.some(s=>s.id==e.id&&s.k==k)?"sel":""}" onclick='pick("${e.id}",${k},${o},${JSON.stringify(e.home+" – "+e.away)})'>${LB[k]}<b>${o.toFixed(2)}</b></button>`:"").join("")}</div>`}
+function btns(e){const nm=JSON.stringify(e.home+" – "+e.away).replace(/"/g,"&quot;");
+ const mk=(m,a,pt)=>a.map((o,k)=>o?`<button class="${slip.some(s=>s.id==e.id&&s.m==m&&s.k==k)?"sel":""}" onclick="pick('${e.id}','${m}',${k},${o},${pt||0},${nm})">${m=="ou"?(k?"U ":"O ")+pt:LB[k]}<b>${o.toFixed(2)}</b></button>`:"").join("");
+ return `<div><div class="o">${mk("h2h",e.odds)}</div>${e.ou?`<div class="o" style="margin-top:2px">${mk("ou",e.ou.o,e.ou.pt)}</div>`:""}</div>`}
 function stake(){return parseFloat($("st")?.value)||0}
 function calc(){const t=$("tot");if(!t)return;const s=stake();
  t.textContent=(mode=="single"?s*slip.reduce((a,b)=>a+b.odds,0):s*slip.reduce((a,b)=>a*b.odds,1)).toFixed(2)}
 async function place(){if(!slip.length)return;
- try{S=await api("bet",{mode,stake:stake(),sel:slip.map(s=>({id:s.id,sport:s.sport,k:s.k}))});slip=[];msg="";load()}catch(e){alert(e.message)}}
+ try{S=await api("bet",{mode,stake:stake(),sel:slip.map(s=>({id:s.id,sport:s.sport,m:s.m,k:s.k,o:s.odds}))});slip=[];msg="";load()}catch(e){alert(e.message)}}
 async function give(){try{const j=await api("give",{to:$("gt").value,amt:$("ga").value});msg="Done. New balance: "+j.bal;load()}catch(e){msg=e.message;draw()}}
 const fmt=t=>new Date(t).toLocaleString([],{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
 function draw(){$("bal").textContent=(S.bal||0).toFixed(2);$("who").textContent=S.name;
@@ -79,12 +82,12 @@ function draw(){$("bal").textContent=(S.bal||0).toFixed(2);$("who").textContent=
  if(view==0){const ev=(odds[sport]||[]).filter(e=>new Date(e.time)>now).sort((a,b)=>a.time<b.time?-1:1);
   h+=`<div class="sec">${SP.find(s=>s[0]==sport)[1]} – upcoming</div>`+(ev.map(e=>`<div class="item"><div><div class="tm">${fmt(e.time)}</div>${e.home} – ${e.away}</div>${btns(e)}</div>`).join("")||"<p>No upcoming matches loaded.</p>")}
  if(view==1){const lv=(scores[sport]||[]).filter(e=>!e.completed&&e.scores);
-  h+=`<div class="sec">LIVE NOW</div>`+(lv.map(e=>`<div class="item"><div>${e.home} – ${e.away} <span class="s">${e.scores.map(s=>s.score).join(" - ")}</span></div></div>`).join("")||"<p>No live matches right now in this league.</p>")}
- if(view==2){h+=`<div class="sec">MY BETS</div><p class="small">Odds are locked when you place a bet. Bets settle automatically when the real match ends.</p>`+(S.bets.map(b=>`<div class="bet ${b.st}"><b>${b.type}</b> · stake ${b.stake.toFixed(2)} · <b>${b.st.toUpperCase()}</b>${b.sel.map(x=>`<div class="small">${x.name}: ${LB[x.k]} @ ${x.odds.toFixed(2)}</div>`).join("")}</div>`).join("")||"<p>No bets yet.</p>")}
+  h+=`<div class="sec">LIVE NOW</div>`+(lv.map(e=>{const o=(odds[sport]||[]).find(x=>x.id==e.id);return `<div class="item"><div>${e.home} – ${e.away} <span class="s">${e.scores.map(s=>s.score).join(" - ")}</span></div>${o?btns(o):"<span class=small>Odds suspended</span>"}</div>`}).join("")||"<p>No live matches right now in this league.</p>")}
+ if(view==2){h+=`<div class="sec">MY BETS</div><p class="small">Odds are locked when you place a bet. Bets settle automatically when the real match ends.</p>`+(S.bets.map(b=>`<div class="bet ${b.st}"><b>${b.type}</b> · stake ${b.stake.toFixed(2)} · <b>${b.st.toUpperCase()}</b>${b.sel.map(x=>`<div class="small">${x.name}: ${lab(x.m||'h2h',x.k,x.pt)} @ ${x.odds.toFixed(2)}</div>`).join("")}</div>`).join("")||"<p>No bets yet.</p>")}
  if(view==3){h+=`<div class="sec">LEADERBOARD</div>`+board.map((r,i)=>`<div class="item"><div>${i+1}. ${r.name}</div><b class="s">${r.bal.toFixed(2)}</b></div>`).join("");
   if(S.admin)h+=`<div class="sec">ADMIN – give or take credits</div><div class="item"><input id="gt" placeholder="username"><input id="ga" type="number" placeholder="amount (negative to remove)"><button onclick="give()">Apply</button><span class="small">${msg}</span></div>`}
  $("main").innerHTML=h;const keep=$("st")?.value||"10";
  $("slip").innerHTML=`<h3>Bet slip (${slip.length})</h3><div class="tabs"><button class="${mode=="single"?"on":""}" onclick="mode='single';draw()">Single</button><button class="${mode!="single"?"on":""}" onclick="mode='multi';draw()">Multiple</button></div>`+
- (slip.map((s,i)=>`<div class="sl"><button class="x" onclick="rm(${i})">✕</button><b>${s.name}</b><br>Pick ${LB[s.k]} @ ${s.odds.toFixed(2)}</div>`).join("")||"<p>Tap odds to add selections.</p>")+
+ (slip.map((s,i)=>`<div class="sl"><button class="x" onclick="rm(${i})">✕</button><b>${s.name}</b><br>Pick ${lab(s.m,s.k,s.pt)} @ ${s.odds.toFixed(2)}</div>`).join("")||"<p>Tap odds to add selections.</p>")+
  `<input id="st" type="number" min="1" value="${keep}" oninput="calc()">Potential win: <b id="tot">0.00</b><br><button class="btn" style="margin-top:10px" onclick="place()">Place bet</button><div class="demo">Play credits only</div>`;calc()}
 </script></body></html>
