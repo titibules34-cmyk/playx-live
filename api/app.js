@@ -13,9 +13,9 @@ async function settle(u){
   for(const s of sp){try{sc[s]=await feed("scores",s)}catch(e){}}
   u.bets.forEach(b=>{if(b.st!="pending")return;
     const rs=b.sel.map(x=>{const e=(sc[x.sport]||[]).find(e=>e.id==x.id);if(!e||!e.completed||!e.scores)return null;
-      const h=+e.scores.find(s=>s.name==e.home).score,a=+e.scores.find(s=>s.name==e.away).score;return(h>a?0:h<a?2:1)==x.k});
+      const h=+e.scores.find(s=>s.name==e.home).score,a=+e.scores.find(s=>s.name==e.away).score;if(x.m==="ou"){const t=h+a;return t===x.pt?"p":(t>x.pt?0:1)===x.k}return(h>a?0:h<a?2:1)===x.k});
     if(rs.includes(false))b.st="lost";
-    else if(rs.every(x=>x===true)){b.st="won";u.bal=round(u.bal+b.stake*b.sel.reduce((a,x)=>a*x.odds,1))}});
+    else if(rs.every(x=>x===true||x==="p")){b.st="won";u.bal=round(u.bal+b.stake*b.sel.reduce((a,x,i)=>a*(rs[i]==="p"?1:x.odds),1))}});
 }
 module.exports=async(req,res)=>{
   if(req.method!=="POST")return res.status(405).end();
@@ -45,11 +45,15 @@ module.exports=async(req,res)=>{
       if(!sel.length||!(stake>0))return out(400,{error:"Add a selection and a stake"});
       const cost=round(multi?stake:stake*sel.length);
       if(cost>u.bal)return out(400,{error:"Not enough credits"});
-      const locked=[];
-      for(const x of sel){const ev=(await feed("odds",x.sport)).find(e=>e.id===x.id);
-        if(!ev||new Date(ev.time)<=Date.now())return out(400,{error:"A match has already started or is no longer available"});
-        const o=ev.odds[x.k];if(!o)return out(400,{error:"That odds option isn't available"});
-        locked.push({id:ev.id,sport:x.sport,k:x.k,odds:o,name:ev.home+" – "+ev.away})}
+      const locked=[],fc={};
+      for(const x of sel){const m=x.m==="ou"?"ou":"h2h",k=x.k===1?1:(x.k===2&&m==="h2h"?2:0);
+        fc[x.sport]=fc[x.sport]||await feed("odds",x.sport);
+        const ev=fc[x.sport].find(e=>e.id===x.id);
+        if(!ev||Date.now()-new Date(ev.time)>4*36e5)return out(400,{error:"That match is no longer available"});
+        const o=m==="ou"?(ev.ou&&ev.ou.o[k]):ev.odds[k];
+        if(!o)return out(400,{error:"Those odds aren't available right now (market may be suspended)"});
+        if(Number(x.o)>0&&o<Number(x.o)*0.97)return out(400,{error:"Odds changed to "+o.toFixed(2)+". Check your slip and try again."});
+        locked.push({id:ev.id,sport:x.sport,m,k,odds:o,pt:m==="ou"?ev.ou.pt:undefined,name:ev.home+" – "+ev.away})}
       u.bal=round(u.bal-cost);
       if(multi)u.bets.unshift({type:"Multiple ("+locked.length+")",sel:locked,stake,st:"pending"});
       else locked.forEach(l=>u.bets.unshift({type:"Single",sel:[l],stake,st:"pending"}));
