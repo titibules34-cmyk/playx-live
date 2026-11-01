@@ -1,6 +1,7 @@
 const crypto=require("crypto"),{feed}=require("../lib/feed");
-const U=process.env.KV_REST_API_URL||process.env.UPSTASH_REDIS_REST_URL,T=process.env.KV_REST_API_TOKEN||process.env.UPSTASH_REDIS_REST_TOKEN,SEC=process.env.APP_SECRET||"change-me";
-const r=async c=>(await(await fetch(U,{method:"POST",headers:{Authorization:"Bearer "+T},body:JSON.stringify(c)})).json()).result;
+const SEC=process.env.APP_SECRET||"change-me";
+const {createClient}=require("redis");let cl=null;
+const r=async c=>{try{if(!cl){cl=createClient({url:process.env.REDIS_URL});cl.on("error",()=>{});await cl.connect()}return await cl.sendCommand(c)}catch(e){cl=null;throw e}};
 const getU=async n=>{const v=await r(["HGET","users",n]);return v?JSON.parse(v):null};
 const putU=(n,u)=>r(["HSET","users",n,JSON.stringify(u)]);
 const hash=(p,s)=>crypto.scryptSync(String(p),s,32).toString("hex");
